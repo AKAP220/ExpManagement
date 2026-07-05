@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Experiment Timeline Board</title>
+  <style>
+    :root{
+      --bg:#f7f5ef;
+      --paper:#fffdf8;
+      --ink:#1d1d1f;
+      --muted:#6b6b6b;
+      --grid:#d5d2cb;
+      --accent:#3b6eea;
+      --accent-soft:#e8efff;
+      --danger:#b3261e;
+      --shadow: 0 14px 35px rgba(0,0,0,.08);
+      --font: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    body{
+      margin:0;
+      background:
+        radial-gradient(circle at top left, rgba(59,110,234,.10), transparent 30%),
+        var(--bg);
+      color:var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .topbar{
+      position:sticky;
+      top:0;
+      z-index:30;
+      display:flex;
+      gap:14px;
+      align-items:center;
+      justify-content:space-between;
+      padding:16px 18px;
+      background:rgba(247,245,239,.88);
+      backdrop-filter: blur(12px);
+      border-bottom:1px solid var(--grid);
+    }
+
+    .brand{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      min-width:260px;
+    }
+    .brand h1{
+      margin:0;
+      font-size:20px;
+      letter-spacing:-.02em;
+    }
+    .brand span{
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .controls{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      justify-content:flex-end;
+      align-items:center;
+    }
+
+    button, input{
+      border:1px solid var(--grid);
+      background:var(--paper);
+      border-radius:12px;
+      padding:10px 12px;
+      font:inherit;
+      color:var(--ink);
+    }
+
+    input[type="number"]{
+      width:92px;
+    }
+
+    button{
+      cursor:pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+    button:hover{ border-color:#9f9b92; transform: translateY(-1px); }
+    button.primary{
+      background:var(--accent);
+      color:white;
+      border-color:var(--accent);
+    }
+    button.danger{
+      color:var(--danger);
+    }
+
+    .size-panel{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+      padding:10px 18px;
+      background:#fffaf0;
+      border-bottom:1px solid var(--grid);
+      font-size:14px;
+    }
+
+    .size-panel label{
+      display:flex;
+      gap:6px;
+      align-items:center;
+      color:var(--muted);
+    }
+
+    .wrap{
+      padding:18px;
+    }
+
+    .board-shell{
+      background:var(--paper);
+      border:1px solid var(--grid);
+      border-radius:22px;
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+
+    .board-scroll{
+      overflow:auto;
+      max-height:calc(100vh - 176px);
+    }
+
+    .grid{
+      display:grid;
+      min-width:max-content;
+      font-family:var(--font);
+      user-select:auto;
+    }
+
+    .cell{
+      position:relative;
+      border-right:1px solid var(--grid);
+      border-bottom:1px solid var(--grid);
+      padding:9px 10px;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+      overflow:auto;
+      background:white;
+      outline:none;
+    }
+
+    .header{
+      position:sticky;
+      top:0;
+      z-index:20;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      font-weight:800;
+      font-size:22px;
+      line-height:1.22;
+      background:linear-gradient(#fff, #fffaf0);
+      overflow:hidden;
+    }
+
+    .date-head{
+      position:sticky;
+      left:0;
+      top:0;
+      z-index:40;
+      background:#f9f6ee;
+      border-right:2px solid var(--grid);
+    }
+
+    .date{
+      position:sticky;
+      left:0;
+      z-index:10;
+      background:#f9f6ee;
+      font-weight:800;
+      font-size:20px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-right:2px solid var(--grid);
+      overflow:hidden;
+    }
+
+    .task{
+      font-weight:650;
+      font-size:18px;
+      line-height:1.25;
+    }
+
+    .cell[contenteditable="true"]:focus{
+      background:var(--accent-soft);
+      box-shadow: inset 0 0 0 2px var(--accent);
+    }
+
+    .column-tools{
+      display:flex;
+      gap:6px;
+      position:absolute;
+      bottom:8px;
+      right:8px;
+      opacity:.18;
+      transition:.15s;
+    }
+    .header:hover .column-tools{ opacity:1; }
+    .mini{
+      padding:5px 7px;
+      border-radius:8px;
+      font-size:12px;
+    }
+
+    .resize-x{
+      position:absolute;
+      top:0;
+      right:-4px;
+      width:8px;
+      height:100%;
+      cursor:col-resize;
+      z-index:50;
+    }
+
+    .resize-y{
+      position:absolute;
+      left:0;
+      bottom:-4px;
+      width:100%;
+      height:8px;
+      cursor:row-resize;
+      z-index:45;
+    }
+
+    .resize-all{
+      position:absolute;
+      right:-5px;
+      bottom:-5px;
+      width:14px;
+      height:14px;
+      cursor:nwse-resize;
+      z-index:70;
+      border-radius:4px;
+      background:rgba(59,110,234,.28);
+    }
+
+    .resize-x:hover, .resize-y:hover, .resize-all:hover{
+      background:rgba(59,110,234,.35);
+    }
+
+    body.resizing{
+      cursor:grabbing;
+      user-select:none;
+    }
+
+    .hint{
+      padding:10px 14px;
+      color:var(--muted);
+      font-size:13px;
+      border-top:1px solid var(--grid);
+      background:#fffaf0;
+    }
+
+    @media (max-width: 720px){
+      .topbar{ align-items:flex-start; flex-direction:column; }
+      .controls{ justify-content:flex-start; }
+      .header{ font-size:18px; }
+      .date{ font-size:16px; }
+      .task{ font-size:16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <h1>Experiment Timeline Board</h1>
+      <span>Editable cells, frozen headers, drag-resizable whole grid.</span>
+    </div>
+    <div class="controls">
+      <button class="primary" id="addExp">+ Experiment</button>
+      <button id="addDate">+ Date</button>
+      <button id="exportCsv">Export CSV</button>
+    </div>
+  </div>
+
+  <div class="size-panel">
+    <strong>Resize all cells:</strong>
+    <label>Cell width <input id="allWidth" type="number" min="120" max="800" step="10"></label>
+    <label>Cell height <input id="allHeight" type="number" min="30" max="260" step="5"></label>
+    <label>Header height <input id="headerHeight" type="number" min="60" max="360" step="5"></label>
+    <label>Date width <input id="dateWidth" type="number" min="70" max="320" step="5"></label>
+    <button id="applySizes">Apply to all</button>
+    <button id="resetSizes">Reset sizes</button>
+  </div>
+
+  <main class="wrap">
+    <section class="board-shell">
+      <div class="board-scroll">
+        <div id="grid" class="grid"></div>
+      </div>
+      <div class="hint">
+        Resize all cells in two ways: use the size boxes above, or drag the blue square in the top-left corner diagonally. You can still resize individual columns/rows by dragging their edges.
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const defaultData = {
+      dates: ["7/4/26","7/5/26","7/6/26","7/7/26","7/8/26","7/9/26","7/10/26","7/11/26","7/12/26"],
+      experiments: [
+        { title:"ATC7_AKAP11 KD\nCorticosterone ELISA", tasks:["Thaw cell line","","split cell line","","","","","",""] },
+        { title:"ATC7_PKAR1a KD\nCorticosterone ELISA", tasks:["Thaw cell line","","split cell line","","","","","",""] },
+        { title:"Make AKAP11\nCMV/TO lentivirus", tasks:["split 2x 10 cm plates","Transfect LentiX -\nsupplement with\nNaBu","","Harvest virus","","","","",""] },
+        { title:"Transduce AKAP11\nCMV/TO lentivirus", tasks:["","split lenti-x","split lenti-x","Transduce lentivirus\ntransfect with gfp1-10","","","","",""] },
+        { title:"Cloning CMV Promoter\non sleeping beauty", tasks:["Primers ordered","","","","","","","",""] },
+        { title:"AKAP11\nphosphopeptide\nenrichment\nexperiment", tasks:["","","","","","","","",""] }
+      ],
+      sizes: {
+        defaultColWidth: 280,
+        defaultRowHeight: 58,
+        dateWidth: 145,
+        colWidths: [],
+        rowHeights: [],
+        headerHeight: 145
+      }
+    };
+
+    let data = JSON.parse(localStorage.getItem("experiment-board-v3") || "null") || structuredClone(defaultData);
+    if(!data.sizes) data.sizes = structuredClone(defaultData.sizes);
+    if(!data.sizes.defaultColWidth) data.sizes.defaultColWidth = 280;
+    if(!data.sizes.defaultRowHeight) data.sizes.defaultRowHeight = 58;
+
+    const grid = document.getElementById("grid");
+    const allWidth = document.getElementById("allWidth");
+    const allHeight = document.getElementById("allHeight");
+    const headerHeightInput = document.getElementById("headerHeight");
+    const dateWidthInput = document.getElementById("dateWidth");
+
+    function save(){ localStorage.setItem("experiment-board-v3", JSON.stringify(data)); }
+    function px(n){ return `${Math.round(n)}px`; }
+
+    function getColWidth(i){ return data.sizes.colWidths[i] || data.sizes.defaultColWidth || 280; }
+    function getRowHeight(i){ return data.sizes.rowHeights[i] || data.sizes.defaultRowHeight || 58; }
+
+    function syncInputs(){
+      allWidth.value = Math.round(data.sizes.defaultColWidth || 280);
+      allHeight.value = Math.round(data.sizes.defaultRowHeight || 58);
+      headerHeightInput.value = Math.round(data.sizes.headerHeight || 145);
+      dateWidthInput.value = Math.round(data.sizes.dateWidth || 145);
+    }
+
+    function applyGridColumns(){
+      const cols = data.experiments.map((_, i) => px(getColWidth(i))).join(" ");
+      grid.style.gridTemplateColumns = `${px(data.sizes.dateWidth || 145)} ${cols}`;
+    }
+
+    function setAllSizes({width, height, headerHeight, dateWidth, clearIndividual=true}){
+      if(width !== undefined) data.sizes.defaultColWidth = Math.max(120, Math.min(800, width));
+      if(height !== undefined) data.sizes.defaultRowHeight = Math.max(30, Math.min(260, height));
+      if(headerHeight !== undefined) data.sizes.headerHeight = Math.max(60, Math.min(360, headerHeight));
+      if(dateWidth !== undefined) data.sizes.dateWidth = Math.max(70, Math.min(320, dateWidth));
+
+      if(clearIndividual){
+        data.sizes.colWidths = data.experiments.map(() => data.sizes.defaultColWidth);
+        data.sizes.rowHeights = data.dates.map(() => data.sizes.defaultRowHeight);
+      }
+      syncInputs();
+      save();
+      render();
+    }
+
+    function beginResize(startEvent, options){
+      startEvent.preventDefault();
+      startEvent.stopPropagation();
+      document.body.classList.add("resizing");
+
+      const startX = startEvent.clientX;
+      const startY = startEvent.clientY;
+      const startValue = options.startValue();
+
+      function move(e){
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        options.apply(dx, dy, startValue);
+      }
+
+      function up(){
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.classList.remove("resizing");
+        save();
+        syncInputs();
+        render();
+      }
+
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    }
+
+    function render(){
+      grid.innerHTML = "";
+      applyGridColumns();
+      syncInputs();
+
+      const corner = document.createElement("div");
+      corner.className = "cell header date-head";
+      corner.style.height = px(data.sizes.headerHeight || 145);
+      corner.textContent = "";
+
+      const dateResize = document.createElement("div");
+      dateResize.className = "resize-x";
+      dateResize.title = "Drag to resize date column";
+      dateResize.addEventListener("mousedown", (e) => beginResize(e, {
+        startValue:() => data.sizes.dateWidth || 145,
+        apply:(dx, dy, start) => {
+          data.sizes.dateWidth = Math.max(70, Math.min(320, start + dx));
+          applyGridColumns();
+        }
+      }));
+      corner.appendChild(dateResize);
+
+      const headerResize = document.createElement("div");
+      headerResize.className = "resize-y";
+      headerResize.title = "Drag to resize header height";
+      headerResize.addEventListener("mousedown", (e) => beginResize(e, {
+        startValue:() => data.sizes.headerHeight || 145,
+        apply:(dx, dy, start) => {
+          data.sizes.headerHeight = Math.max(60, Math.min(360, start + dy));
+          document.querySelectorAll(".header").forEach(el => el.style.height = px(data.sizes.headerHeight));
+        }
+      }));
+      corner.appendChild(headerResize);
+
+      const allResize = document.createElement("div");
+      allResize.className = "resize-all";
+      allResize.title = "Drag diagonally to resize ALL cells";
+      allResize.addEventListener("mousedown", (e) => beginResize(e, {
+        startValue:() => ({
+          w: data.sizes.defaultColWidth || 280,
+          h: data.sizes.defaultRowHeight || 58,
+          header: data.sizes.headerHeight || 145
+        }),
+        apply:(dx, dy, start) => {
+          data.sizes.defaultColWidth = Math.max(120, Math.min(800, start.w + dx));
+          data.sizes.defaultRowHeight = Math.max(30, Math.min(260, start.h + dy));
+          data.sizes.headerHeight = Math.max(60, Math.min(360, start.header + dy));
+          data.sizes.colWidths = data.experiments.map(() => data.sizes.defaultColWidth);
+          data.sizes.rowHeights = data.dates.map(() => data.sizes.defaultRowHeight);
+          applyGridColumns();
+          document.querySelectorAll(".header").forEach(el => el.style.height = px(data.sizes.headerHeight));
+          document.querySelectorAll("[data-row]").forEach(el => {
+            const r = Number(el.dataset.row);
+            el.style.height = px(getRowHeight(r));
+          });
+        }
+      }));
+      corner.appendChild(allResize);
+
+      grid.appendChild(corner);
+
+      data.experiments.forEach((exp, col) => {
+        const h = document.createElement("div");
+        h.className = "cell header";
+        h.contentEditable = "true";
+        h.textContent = exp.title;
+        h.style.height = px(data.sizes.headerHeight || 145);
+        h.addEventListener("input", () => { data.experiments[col].title = h.textContent; save(); });
+
+        const x = document.createElement("div");
+        x.className = "resize-x";
+        x.title = "Drag to resize this experiment column";
+        x.addEventListener("mousedown", (e) => beginResize(e, {
+          startValue:() => getColWidth(col),
+          apply:(dx, dy, start) => {
+            data.sizes.colWidths[col] = Math.max(120, Math.min(800, start + dx));
+            applyGridColumns();
+          }
+        }));
+        h.appendChild(x);
+
+        const tools = document.createElement("div");
+        tools.className = "column-tools";
+        const del = document.createElement("button");
+        del.className = "mini danger";
+        del.textContent = "Delete";
+        del.onclick = (e) => {
+          e.stopPropagation();
+          if(confirm("Delete this experiment column?")){
+            data.experiments.splice(col,1);
+            data.sizes.colWidths.splice(col,1);
+            save(); render();
+          }
+        };
+        tools.appendChild(del);
+        h.appendChild(tools);
+        grid.appendChild(h);
+      });
+
+      data.dates.forEach((date, row) => {
+        const d = document.createElement("div");
+        d.className = "cell date";
+        d.contentEditable = "true";
+        d.textContent = date;
+        d.dataset.row = row;
+        d.style.height = px(getRowHeight(row));
+        d.addEventListener("input", () => { data.dates[row] = d.textContent; save(); });
+
+        const y = document.createElement("div");
+        y.className = "resize-y";
+        y.title = "Drag to resize this date row";
+        y.addEventListener("mousedown", (e) => beginResize(e, {
+          startValue:() => getRowHeight(row),
+          apply:(dx, dy, start) => {
+            data.sizes.rowHeights[row] = Math.max(30, Math.min(260, start + dy));
+            document.querySelectorAll(`[data-row="${row}"]`).forEach(el => el.style.height = px(data.sizes.rowHeights[row]));
+          }
+        }));
+        d.appendChild(y);
+        grid.appendChild(d);
+
+        data.experiments.forEach((exp, col) => {
+          while(exp.tasks.length < data.dates.length) exp.tasks.push("");
+          const c = document.createElement("div");
+          c.className = "cell task";
+          c.contentEditable = "true";
+          c.textContent = exp.tasks[row] || "";
+          c.dataset.row = row;
+          c.dataset.col = col;
+          c.style.height = px(getRowHeight(row));
+          c.addEventListener("input", () => {
+            data.experiments[col].tasks[row] = c.textContent;
+            save();
+          });
+          grid.appendChild(c);
+        });
+      });
+    }
+
+    document.getElementById("applySizes").onclick = () => {
+      setAllSizes({
+        width: Number(allWidth.value),
+        height: Number(allHeight.value),
+        headerHeight: Number(headerHeightInput.value),
+        dateWidth: Number(dateWidthInput.value),
+        clearIndividual:true
+      });
+    };
+
+    document.getElementById("addExp").onclick = () => {
+      const title = prompt("Experiment name?", "New experiment");
+      if(!title) return;
+      data.experiments.push({ title, tasks: data.dates.map(() => "") });
+      data.sizes.colWidths.push(data.sizes.defaultColWidth || 280);
+      save(); render();
+    };
+
+    document.getElementById("addDate").onclick = () => {
+      const last = data.dates[data.dates.length - 1] || "";
+      const date = prompt("Date?", last);
+      if(!date) return;
+      data.dates.push(date);
+      data.experiments.forEach(e => e.tasks.push(""));
+      data.sizes.rowHeights.push(data.sizes.defaultRowHeight || 58);
+      save(); render();
+    };
+
+    document.getElementById("resetSizes").onclick = () => {
+      data.sizes = structuredClone(defaultData.sizes);
+      data.sizes.colWidths = data.experiments.map(() => data.sizes.defaultColWidth);
+      data.sizes.rowHeights = data.dates.map(() => data.sizes.defaultRowHeight);
+      save(); render();
+    };
+
+    document.getElementById("exportCsv").onclick = () => {
+      const rows = [];
+      rows.push(["Date", ...data.experiments.map(e => e.title.replaceAll("\n"," "))]);
+      data.dates.forEach((date, i) => {
+        rows.push([date, ...data.experiments.map(e => (e.tasks[i] || "").replaceAll("\n"," "))]);
+      });
+      const csv = rows.map(r => r.map(x => `"${String(x).replaceAll('"','""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], {type:"text/csv"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "experiment-board.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    render();
+  </script>
+</body>
+</html>
