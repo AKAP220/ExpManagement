@@ -290,17 +290,19 @@
       display:flex;
       gap:6px;
       flex-wrap:wrap;
-      opacity:.18;
+      opacity:1;
       transition:.15s;
-      margin-top:4px;
+      margin-top:8px;
     }
 
-    .task:hover .img-tools{ opacity:1; }
-
     .img-tools button{
-      padding:5px 7px;
+      padding:6px 9px;
       border-radius:8px;
       font-size:12px;
+      background:var(--accent-soft);
+      border-color:var(--accent);
+      color:var(--ink);
+      font-weight:700;
     }
 
     .hidden-file{
@@ -345,7 +347,7 @@
         <div id="grid" class="grid"></div>
       </div>
       <div class="hint">
-        Resize all cells in two ways: use the size boxes above, or drag the blue square in the top-left corner diagonally. You can still resize individual columns/rows by dragging their edges.
+        Use + Image inside any task cell to attach a picture. Resize all cells with the size boxes above, or drag the blue square in the top-left corner diagonally.
       </div>
     </section>
   </main>
