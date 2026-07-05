@@ -104,6 +104,36 @@
       font-size:14px;
     }
 
+
+    .sync-panel{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+      padding:10px 18px;
+      background:#eef3ff;
+      border-bottom:1px solid var(--grid);
+      font-size:14px;
+    }
+
+    .sync-panel input[type="email"]{
+      width:260px;
+      max-width:100%;
+    }
+
+    .sync-status{
+      color:var(--muted);
+      font-weight:700;
+    }
+
+    .sync-good{
+      color:#176b37;
+    }
+
+    .sync-bad{
+      color:#9d1c1c;
+    }
+
     .size-panel label{
       display:flex;
       gap:6px;
@@ -317,6 +347,7 @@
       .task{ font-size:16px; }
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <div class="topbar">
@@ -341,6 +372,15 @@
     <button id="resetSizes">Reset sizes</button>
   </div>
 
+  <div class="sync-panel">
+    <strong>Cloud sync:</strong>
+    <input id="emailInput" type="email" placeholder="your email for login">
+    <button id="loginBtn">Send login link</button>
+    <button id="logoutBtn">Logout</button>
+    <button id="saveCloudBtn">Save to cloud now</button>
+    <span id="syncStatus" class="sync-status">Not synced</span>
+  </div>
+
   <main class="wrap">
     <section class="board-shell">
       <div class="board-scroll">
@@ -353,6 +393,16 @@
   </main>
 
   <script>
+    const SUPABASE_URL = "https://fdtqvxztayhpalbrjxvt.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_7GpXtYhC8OnZy90gSdIsFw_H2hUeOsc";
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentUser = null;
+    let cloudBoardId = null;
+    let saveTimer = null;
+    let loadingFromCloud = false;
+    let lastCloudError = "";
+
     const defaultData = {
       dates: ["7/4/26","7/5/26","7/6/26","7/7/26","7/8/26","7/9/26","7/10/26","7/11/26","7/12/26"],
       experiments: [
@@ -374,15 +424,7 @@
     };
 
     let data = JSON.parse(localStorage.getItem("experiment-board-v3") || "null") || structuredClone(defaultData);
-    if(!data.sizes) data.sizes = structuredClone(defaultData.sizes);
-    if(!data.sizes.defaultColWidth) data.sizes.defaultColWidth = 280;
-    if(!data.sizes.defaultRowHeight) data.sizes.defaultRowHeight = 58;
-
-    data.experiments.forEach(exp => {
-      if(!exp.images) exp.images = data.dates.map(() => "");
-      while(exp.images.length < data.dates.length) exp.images.push("");
-      while(exp.tasks.length < data.dates.length) exp.tasks.push("");
-    });
+    normalizeDataShape();
 
     const grid = document.getElementById("grid");
     const allWidth = document.getElementById("allWidth");
@@ -390,7 +432,168 @@
     const headerHeightInput = document.getElementById("headerHeight");
     const dateWidthInput = document.getElementById("dateWidth");
 
-    function save(){ localStorage.setItem("experiment-board-v3", JSON.stringify(data)); }
+    function save(){
+      localStorage.setItem("experiment-board-v3", JSON.stringify(data));
+      queueCloudSave();
+    }
+
+    function setSyncStatus(message, type=""){
+      const el = document.getElementById("syncStatus");
+      if(!el) return;
+      el.textContent = message;
+      el.className = "sync-status";
+      if(type === "good") el.classList.add("sync-good");
+      if(type === "bad") el.classList.add("sync-bad");
+    }
+
+    function queueCloudSave(){
+      if(loadingFromCloud || !currentUser) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveCloudBoard, 700);
+    }
+
+    async function saveCloudBoard(){
+      if(!currentUser) {
+        setSyncStatus("Not synced. Log in to save across devices.");
+        return;
+      }
+
+      const payload = {
+        user_id: currentUser.id,
+        name: "Main Board",
+        board_data: data,
+        updated_at: new Date().toISOString()
+      };
+
+      setSyncStatus("Saving to cloud...");
+
+      try{
+        if(cloudBoardId){
+          const { error } = await supabaseClient
+            .from("experiment_boards")
+            .update(payload)
+            .eq("id", cloudBoardId);
+
+          if(error) throw error;
+        } else {
+          const { data: inserted, error } = await supabaseClient
+            .from("experiment_boards")
+            .insert(payload)
+            .select()
+            .single();
+
+          if(error) throw error;
+          if(inserted) cloudBoardId = inserted.id;
+        }
+
+        lastCloudError = "";
+        setSyncStatus("Synced as " + currentUser.email, "good");
+      } catch(err){
+        lastCloudError = err.message || String(err);
+        console.error(err);
+        setSyncStatus("Cloud save failed: " + lastCloudError, "bad");
+      }
+    }
+
+    function normalizeDataShape(){
+      if(!data.sizes) data.sizes = structuredClone(defaultData.sizes);
+      if(!data.sizes.defaultColWidth) data.sizes.defaultColWidth = 280;
+      if(!data.sizes.defaultRowHeight) data.sizes.defaultRowHeight = 58;
+
+      data.experiments.forEach(exp => {
+        if(!exp.images) exp.images = data.dates.map(() => "");
+        while(exp.images.length < data.dates.length) exp.images.push("");
+        while(exp.tasks.length < data.dates.length) exp.tasks.push("");
+      });
+    }
+
+    async function loadCloudBoard(){
+      if(!currentUser) return;
+
+      setSyncStatus("Loading cloud board...");
+      loadingFromCloud = true;
+
+      try{
+        const { data: board, error } = await supabaseClient
+          .from("experiment_boards")
+          .select("*")
+          .eq("user_id", currentUser.id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if(error) throw error;
+
+        if(board){
+          cloudBoardId = board.id;
+          data = board.board_data;
+          normalizeDataShape();
+          localStorage.setItem("experiment-board-v3", JSON.stringify(data));
+          render();
+          setSyncStatus("Synced as " + currentUser.email, "good");
+        } else {
+          cloudBoardId = null;
+          await saveCloudBoard();
+        }
+      } catch(err){
+        console.error(err);
+        setSyncStatus("Cloud load failed: " + (err.message || String(err)), "bad");
+      } finally{
+        loadingFromCloud = false;
+      }
+    }
+
+    async function initAuth(){
+      const emailInput = document.getElementById("emailInput");
+      const loginBtn = document.getElementById("loginBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const saveCloudBtn = document.getElementById("saveCloudBtn");
+
+      loginBtn.onclick = async () => {
+        const email = emailInput.value.trim();
+        if(!email) return alert("Enter your email first.");
+
+        setSyncStatus("Sending login link...");
+        const { error } = await supabaseClient.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.href }
+        });
+
+        if(error) setSyncStatus("Login failed: " + error.message, "bad");
+        else setSyncStatus("Check your email for the login link", "good");
+      };
+
+      logoutBtn.onclick = async () => {
+        await supabaseClient.auth.signOut();
+        currentUser = null;
+        cloudBoardId = null;
+        setSyncStatus("Logged out");
+      };
+
+      saveCloudBtn.onclick = async () => {
+        await saveCloudBoard();
+      };
+
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      currentUser = sessionData.session?.user || null;
+
+      if(currentUser){
+        await loadCloudBoard();
+      } else {
+        setSyncStatus("Not synced. Log in to sync across devices.");
+      }
+
+      supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        currentUser = session?.user || null;
+
+        if(currentUser){
+          await loadCloudBoard();
+        } else {
+          cloudBoardId = null;
+          setSyncStatus("Not synced. Log in to sync across devices.");
+        }
+      });
+    }
     function px(n){ return `${Math.round(n)}px`; }
 
     function getColWidth(i){ return data.sizes.colWidths[i] || data.sizes.defaultColWidth || 280; }
@@ -709,6 +912,7 @@
     };
 
     render();
+    initAuth();
   </script>
 </body>
 </html>
